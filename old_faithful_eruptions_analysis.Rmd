@@ -1,0 +1,588 @@
+---
+title: "MATH50010 Coursework"
+author: 'Dariyan Khan | CID: 01723886'
+date: "1/12/2020"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE,fig.align='center'}
+library(formatR)
+knitr::opts_chunk$set(echo = TRUE,tidy.opts = list(width.cutoff = 65), tidy = TRUE)
+```
+
+\section{Loading and Exploration}
+
+First we load in the data:
+
+```{r}
+set.seed(42) #Set random seed so that results are reproducible
+```
+
+
+```{r}
+geyser_data=read.csv("geyser_data.csv",sep=",")
+```
+
+We now inspect the distribution of the eruption lengths. To do this, I will plot a histogram of the data
+
+```{r}
+
+hist(geyser_data$time,main='Histogram of geyser eruption lengths',xlab='eruption length',breaks=50,col='red',border='black')
+
+```
+We can see from the histogram that eruption length can almost be split into two categories: short, where the average eruption length is around about 2 minutes, and long where the eruption length is about 4.5 minutes. There are not many eruptions that last between 2.5 and 3.5 minutes considering the length of the interval.
+
+To have a look at successive terms, I will create a lag plot for the times.
+
+```{r}
+lag.plot( geyser_data$time, lags = 1,diag=TRUE,diag.col='red')
+title(main='A lag plot for the eruption times')
+```
+On the plot, the y-axis is $t_{i}$, the x-axis is $t_{i+1}$ and the dashed red line is $y=x$
+
+Our lag plot is clearly in four clusters, and is almost symmetrical about the line y=x. The most common scenario is that a short eruption is followed by a longer eruption or vice versa. However, it is not uncommon for a long eruption to be followed by another long eruption. It is unlikely that a short eruption is followed by another short eruption (this only happened six times).
+
+We now add a new column to our table called **state**, whose value is 0 if the length of the eruption is <=3 (indicating the eruption is short)  and 1 if the length of the eruption is >3 (indicating the eruption was long).
+
+```{r}
+
+num_erups=272 #This is the number of eruptions measured (i.e. number of rows in table)
+
+geyser_lengths=c(geyser_data$time)
+
+#create empty vector  of length 272 that we will then populate
+state_vec <- integer(num_erups) 
+
+
+
+for (i in seq(1,num_erups,1)){
+  if (geyser_lengths[i]>3){
+     state_vec[i]=1
+     }
+  
+}
+
+geyser_data$state = state_vec #create new column
+```
+
+To calculate the proportion of eruptions in each of the two states we can just find the mean. This will give the proportion of 1's and we can then easily find the proportion of 0's.
+```{r}
+one_prop=mean(state_vec)
+zero_prop=1-one_prop
+
+one_prop
+zero_prop
+```
+
+
+We will now count the number of pairs in each of the possible pairs of successive states (0,0), (0,1), (1,0),(1,1).I will create a table to keep track of the results.
+
+```{r}
+#join the elements in the state vector into a string.
+state_string= paste(c(geyser_data$state),collapse="")
+library(stringr)
+
+#counts the number of each transition
+transitions_vec = c(str_count(state_string,paste0("(?=",c("11","10","01","00"),")"))) 
+
+#records the data in a table
+transitions_df=data.frame(row.names=c("(1,1)","(1,0)","(0,1)","(0,0)"), val=transitions_vec) 
+
+transitions_df
+
+
+
+```
+
+\section{Evaluating an independence model}
+
+If each of the states are 0 or 1, then we can label the state of eruption i as $X_i$ where $X_i \sim Bern(\theta)$ and each of them is independent. We will use maximum likelihood to estimate the value of $\theta$. We let $L=L(data|\theta) =P(X_1=x_1,X_2=x_2,...,X_n=x_n|\theta)$. By independence, we can factor this into $\prod_{i=1}^{n} P(X_i|\theta)$ =$\prod_{i=1}^{n} \theta^{x_i}(1-\theta)^{1-x_i}$. = $(\theta^{\sum_{i=1}^{n} x_i})(1-\theta)^{n-\sum_{i=1}^{n} x_i}$. $\sum_{i=1}^{n} x_i =n\bar{x}$ where $\bar{x}$ is the sample mean.
+
+So, $L=\theta^{n\bar{x}}(1-\theta)^{(n-n\bar{x})}$. Thus, $G = log(L) = n\bar{x}log(\theta) + (n-n\bar{x})log(1-\theta)$
+
+$\frac{dG}{d\theta}=\frac{n\bar{x}}{\theta} - \frac{n-n\bar{x}}{1-\theta}$. This is 0 precisely when $\theta = \bar{x}$. 
+
+The second derivative of G is $\frac{-n\bar{x}}{\theta^2} - \frac{n-n\bar{x}}{(1-\theta)^2}$ and this is clearly negative if $\theta = \bar{x}$. So, $\bar{x}$ is a maximum of the function G and therefore L. To make sure that it is a global maximum, we check the end points of our function L, which correspond to $\theta=0$ and $\theta=1$ as we are dealing with Bernoulli variables. Clearly, putting both of these values into L returns 0. So, $\bar{x}$ is indeed the global maximum. For our data the sample mean is 0.6433. So, $P(X_{i}=1)=0.6433$ and $P(X_{i}=0)=0.3567$ for arbitrary i.
+
+
+```{r}
+state_vec_mean=mean(state_vec)
+state_vec_mean
+```
+
+$P(X_{i+1}=1,X_i=1) = P(X_{i+1}=1)P(X_i=1)$ (by independence) = 0.414 Similarly, we can compute that $P(X_{i+1}=1,X_i=0) = P(X_{i+1}=0,X_i=1)=0.229$ and $P(X_{i+1}=0,X_i=0)=0.127$
+
+```{r}
+calc_ind_MLE_probs = function(state_vec_mean){
+  # probabilities in the order (1,1), (1,0), (0,1), (0,0)
+  MLE_probs=c(state_vec_mean*state_vec_mean,state_vec_mean*(1-state_vec_mean),(1-state_vec_mean)*state_vec_mean,
+            (1-state_vec_mean)*(1-state_vec_mean))
+  
+  return(MLE_probs)
+}
+
+
+
+MLE_probs = calc_ind_MLE_probs(state_vec_mean)
+
+MLE_probs
+```
+
+
+
+We now calculate the log likelihood ratio statistic.
+
+Our first model is the one we obtain from the maximum likelihood estimation.
+
+We now calculate the probabilities of the more general multinomial model:
+
+```{r}
+list_of_transitions= c('(1,1)','(1,0)','(0,1)','(0,0)')
+
+general_probs= c(0)*4 #create empty vector that we can then assign values to.
+
+
+for (i in c(1,2,3,4)){
+  general_probs[i]= (transitions_vec[i]/(num_erups-1))
+}
+```
+
+Now we define the log-likelihood function:
+
+```{r}
+log_l_hood = function(prob_vec,transitions_vec){
+  log_sum=0
+  for (i in c(1,2,3,4)){
+    log_sum = log_sum + (transitions_vec[i]*log(prob_vec[i],base=exp(1))) 
+  }
+  
+  return(log_sum)
+  
+}
+```
+
+We re-arrange the likelihood the formula used in the function above so that we are not taking powers of small probabilities. This reduces the chance of an underflow error.
+
+Our value for the  log likelihood ratio statistic is then
+```{r}
+log_l_hood(general_probs,transitions_vec) - log_l_hood(MLE_probs,transitions_vec)
+```
+We now create permutations of our data and evaluate the log likelihood ratio for each of them.
+
+```{r}
+
+rndm_log_l_ratio_vec= c() #define empty vector
+
+#now we take 1000 permutations of our vector of states
+for (i in 1:10000){
+  
+  #permutation of the state vector
+  rndm_state_vec=sample(state_vec)
+  #concatenate vector into a string.
+  rndm_state_string=paste(rndm_state_vec,collapse="") 
+  #count the number of transitions.
+  rndm_transitions_vec=c(str_count(rndm_state_string,paste0("(?=",c("11","10","01","00"),")"))) 
+
+  
+  rndm_general_probs= c(0)*4 #vector of zeros for the probabilities.
+  for (i in c(1,2,3,4)){
+    #calculate probabilities for the general multinomial model.
+    rndm_general_probs[i]= (rndm_transitions_vec[i]/(num_erups-1)) 
+  }
+  
+  #calculate MLE probabilities for our randomised vector.
+  rndm_MLE_probs = calc_ind_MLE_probs(mean(rndm_state_vec))
+  
+  #calculate likelihood statistic
+  rndm_log_l_ratio=log_l_hood(rndm_general_probs,rndm_transitions_vec) -        log_l_hood(rndm_MLE_probs,rndm_transitions_vec)
+  
+  #add it to the vector
+  rndm_log_l_ratio_vec = c(rndm_log_l_ratio_vec,rndm_log_l_ratio)
+
+}
+
+#draw a histogram of the likelihood values to examine their distribution.
+hist(rndm_log_l_ratio_vec,main='Histogram of random log likelihood ratio values',xlab='likelihood_ratios',breaks=100,col='red',border='black')
+```
+
+We know do a hypothesis test on our actual data compared to the randomly generated data using the 'bootstrap method'. We set:
+
+$H_0$: Our data was created under the null model (the null model is the one where we assume each state is independent.)
+
+$H_1$: Our model was not created under the null model.
+
+We will use a two tailed test and a significance level of 0.05.
+
+0.05/2 = 0.025. So we approximate the two tails of our test by ordering the likelihoods and finding the 2.5th and the 97.5th percentiles.
+
+
+```{r}
+sorted_rndm_l_hood_vec=sort(rndm_log_l_ratio_vec)
+lower_tail = sorted_rndm_l_hood_vec[10000*0.025]
+upper_tail=sorted_rndm_l_hood_vec[10000*0.975]
+
+lower_tail
+upper_tail
+
+
+```
+
+Clearly, our test statistic of 33.8 is not between 0.00479 and 2.513. So, we reject the null hypothesis. Thus, there is evidence to suggest that our data was not generated under the null hypothesis.
+
+\section{An asymptotic result}
+
+Now we inspect the distribution of our likelihood ratios to a chi-squared distribution.
+
+```{r}
+qqplot(2*rndm_log_l_ratio_vec,rchisq(10000,1),
+       main='Q-Q plot of likelihood statistics against a chi-squared distribution')
+abline(0,1,col=2)
+```
+We can see that double the log-likelihood ratio very closely follows a chi-squared distribution with degrees of freedom 1, as the quantiles are very close to the line y=x.
+
+There are four free parameters in our alternative model. This is because we have to estimate the probability of each of the transitions (1,1), (1,0), (0,1) and (0,0) empirically using the data. In our null (theoretical-based) model, we only have to estimate the probabilities: (1,1), (1,0), and (0,1) as under the null model the probability of going from (0,1) is the same as going from (1,0). So we have three free parameters. Thus, our degrees of freedom is 4-3 = 1.
+
+
+\section{A two-state Markov model}
+
+Again we use maximum likelihood estimation. We assign a probability of $\alpha$ of going from state 0 to state 1 and a probability of $\beta$ for going from 1 to 0. So the probability that we are in 0 and stay in 0 is $(1-\alpha)$ and the probability of being in 1 and staying in 1 is $1-\beta$.
+
+We let $Y_i$ denote the state we are in at each time step. $Y_i$ is either 0 or 1.
+
+$L(\alpha,\beta|data) = P(Y_n=y_n,...,Y_1=y_1,Y_0=y_0|\alpha,\beta)$
+$= P(Y_n=y_n|Y_{n-1}=y_{n-1},...,Y_0=y_0)P(Y_{n-1}=y_{n-1},...,Y_0=y_0|\alpha,\beta)$
+By the markov property, we can simplify the first probability so we get $P(Y_n=y_n|Y_{n-1}=y_{n-1},...,Y_0=y_0,\alpha,\beta)P(Y_{n-1}=y_{n-1},...,Y_0=y_0|\alpha,\beta)$.
+
+Using the same trick to simplify the latter probability in the product, we can write the probability as:
+
+$P(Y_n=y_n|Y_{n-1}=y_{n-1},\alpha,\beta)P(Y_{n-1}=y_{n-1}|Y_{n-2}=y_{n-2},\alpha,\beta)...P(Y_1=y_1|Y_0=y_0,\alpha,\beta)P(Y_0=y_0)$
+
+We omit $\alpha$ and $\beta$ in the last term as $Y_0$ does not depend on the transition probabilities.
+
+We can write this as $P_{y_{n-1} y_n}P_{y_{n-2} y_{n-1}}...P_{y_0 y_1}P(Y_0=y_0)$ Where P is the transition matrix. 
+
+We can do this as we are assuming that our markov model is time-homogeneous.
+
+If we let  the matrix P consist of elements $(p_{ij})$ we can write this likelihood as $P(Y_0=y_0)\prod_{(i,j)\in{1,2}} p_{ij}^{n_{ij}}$.
+
+We can  then write that $L(\alpha,\beta|data) = L = Pr(Y_0=y_0)(1-\alpha)^{n_{11}}\alpha^{n_{12}}(1-\beta)^{n_{21}}\beta^{n_{22}}$.
+
+Now let $G=log(L) = k + n_{11}log(1-\alpha) + n_{12}log(\alpha) + n_{21}log(\beta) + n_{11}log(1-\beta)$ Where $k=P(Y_0=y_0).$
+
+We will have a stationary point if both partial derivatives of G are 0.
+
+If $\frac{\partial G}{\partial \alpha} = -\frac{n_{11}}{1-\alpha} + \frac{n_{12}}{\alpha}=0$ then $\alpha = \hat{\alpha} = \frac{n_{12}}{n_{11}+n_{12}}.$
+
+Similarly, if $\frac{\partial G}{\partial \beta} = -\frac{n_{22}}{1-\beta} + \frac{n_{21}}{\beta}=0$ then $\beta = \hat{\beta} = \frac{n_{21}}{n_{22}+n_{21}}.$
+
+$(\hat{\alpha},\hat{\beta})$ is a stationary point. We need to check whether it is a maximum or a minimum. To do this, we calculate the Hessian matrix H=
+
+$\begin{bmatrix}
+    G_{\alpha\alpha} & G_{\alpha\beta} \\
+    G_{\beta\alpha} & G_{\beta\beta}
+  \end{bmatrix}$
+  
+Where subscripts denote partial derivatives. We can clearly see that $G_{\alpha\beta}=G_{\beta\alpha}=0$
+So, $det(H) = G_{\alpha\alpha}G_{\beta\beta} and Tr(H)= G_{\alpha\alpha} + G_{\beta\beta}.$
+
+$G_{\alpha\alpha}= -\frac{n_{11}}{(1-\alpha)^2} -\frac{n_{12}}{\alpha^2}$ which is negative at $(\hat{\alpha},\hat{\beta})$
+
+$G_{\beta\beta}= -\frac{n_{22}}{(1-\beta)^2} -\frac{n_{21}}{\beta^2}$ which is negative at $(\hat{\alpha},\hat{\beta})$.
+
+So clearly when evaluated at $(\hat{\alpha},\hat{\beta})$, det(H)>0 and Tr(H)<0 which implies that $(\hat{\alpha},\hat{\beta})$ is a maximum.
+
+We now just need to check the boundary to make sure that $(\hat{\alpha},\hat{\beta})$ is a global maximum. As $0\leq\alpha,\beta\leq1$, We are on the boundary if $\alpha=0,\alpha=1, \beta=0, or \beta=1$ But clearly in each of these cases, L turns out to be 0. So, $(\hat{\alpha},\hat{\beta})$ must be our global maximum.
+
+So, from our data we get the following approximations for $\alpha$ and $\beta$:
+
+```{r}
+alpha = transitions_vec[3]/(transitions_vec[3] + transitions_vec[4])
+
+beta=transitions_vec[2]/(transitions_vec[1] + transitions_vec[2])
+
+alpha
+beta
+```
+
+So, our transition matrix is: 
+```{r}
+transitions_df=data.frame(row.names=c("(1,1)","(1,0)","(0,1)","(0,0)"), val=transitions_vec)
+
+transition_matrix = matrix(c(1-alpha,alpha,beta,1-beta),ncol=2,byrow=TRUE) #create matrix
+
+#To make code easier when indexing etc., I will let the states be 1 and 2 instead of 0 and 1.
+
+colnames(transition_matrix) = c(1,2)
+rownames(transition_matrix) = c(1,2)
+
+#two_state_transition_table=as.table(transition_matrix) 
+transition_matrix
+```
+
+Now, we create a function that simulates **N** steps of a markov chain given the transition matrix and assuming the initial state is sampled uniformly.
+
+```{r}
+markov_steps = function(N,t_matrix){
+  
+  #blank vector that we will assign values to
+  x=vector(length=N) 
+  
+  #get size of state space from transition matrix.
+  n_states=nrow(t_matrix)
+  
+  #we sample the initial state uniformly from the state space
+  x[1]=sample(x=n_states,size=1) 
+  
+  
+  for (i in 2:N ){
+    #Get appropriate row of transition matrix:
+    x[i] = sample(x=n_states,size=1,prob=t_matrix[x[i-1],])
+  
+  }
+  
+  return(x)
+}
+```
+
+We test the function to make sure the answer it gives looks reasonable  (e.g. we should expect there to be very few adjacecnt ones).
+```{r}
+markov_steps(100,transition_matrix)
+```
+
+Now we write a function that calculates the MLE estimates of $\alpha$ and $\beta$.
+```{r}
+ml_est=function(markov_sample){
+  #concatenate markov chain to a string
+  state_string=paste(markov_sample,collapse="") 
+  #count the number of each transitions
+  transition_counts=str_count(state_string,paste0("(?=",c("22","21","12","11"),")"))
+  alpha=transition_counts[3]/(transition_counts[3]+transition_counts[4])
+  beta=transition_counts[2]/(transition_counts[2]+transition_counts[1])
+  return(c(alpha,beta))
+}
+```
+
+
+```{r}
+#Our alpha and beta derived from the data
+ml_est(markov_steps(1000,transition_matrix))
+```
+Now we take many samples and keep the estimates of $\alpha$ and $\beta$ in a matrix.
+
+```{r}
+N=1000 #number of steps in markov chains
+n_sample=1000 #how many markov chains we will simulate.
+par_est=matrix(nrow=n_sample,ncol=2)
+for( i in 1:n_sample){
+  chain=markov_steps(N,transition_matrix)
+  par_est[i,]=ml_est(chain)
+}
+
+```
+Now we plot the results of our parameter estimations in a scatter plot:
+```{r}
+plot(par_est,xlim=c(0,1),ylim=c(0,1),xlab='alpha',ylab='beta',main='Plot of estimates of alpha and beta')
+abline(v=alpha,col=2,lty=2)
+abline(h=beta,col=2,lty=2)
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+qqnorm(par_est[,1],main='Normal Q-Q plot for alpha')
+qqnorm(par_est[,2],main='Normal Q-Q plot for beta')
+```
+From the scatter plot, we can see that the estimates of alpha and beta are very closely packed around our empirical values for $\alpha$ and $\beta$. Also, the shape of the scatter plot is elliptical with center $(\hat{\alpha},\hat{\beta})$ implying that the joint density of our estimates are bivariate normal.
+
+When we then plot the qqnorm plots for oour $\alpha$ and $\beta$ estimates, we can see that in both cases the line is almost straight. Thus, it is likely that distribution of both estimates is normal.
+
+Below I also plot a histogram of the data to demonstrate the 'normal' shape.
+
+```{r,out.width='80%',fig.align='center'}
+par(mfrow=c(1,2))
+hist(par_est[,1],breaks=75,col='red',border='black',main='Histogram of alpha estimates')
+hist(par_est[,2],breaks=75,col='red',border='black',main='Histogram of beta estimates')
+```
+Of course the transition probabilities of (1,1),(1,0) are correlated and (0,1),(0,0) are correlated. This is because in the case of (1,1),(1,0) which have probability $\alpha$ and $1-\alpha$ respectively, there is a linear function relating the two quantities, implying correlation. So, we just need to check if $\alpha$ and $\beta$ are correlated and this will then tell us whether $\alpha$ and $1-\beta$, and $1-\alpha$ and $beta$ are related (due to the linear relationships.)
+
+We perform a pearson correlation coefficient test on $\alpha$ and $\beta$ to see if they are correlated. The null hypothesis is that the true correlation is 0, and a significance level of 0.05 is used. Based on the elliptical shape of the scatter plot, I expect the correlation to be close to 0.
+```{r}
+cor.test(par_est[,1],par_est[,2])
+```
+
+Indeed, from the test above we can see that sample correlation is only 0.019, and the p-value of our test is  0.5485. This is above our significance level of 0.05, so there is evidence to suggest that the null hypothesis is correct, which states that $\alpha$ and $\beta$ are not correlated.
+
+
+Below, we define a function that calculates the run lengths in a markov chain. We can use this function I wrote below, or we can use the 'run length encoding (rle) function' in R. I will be using the run length encoding one.
+
+
+```{r}
+calc_run_lengths = function(markov_chain){
+  run_lengths=c()
+  current_index=2
+  prev_index=1
+  current_run_length=1
+  for (i in 1:(length(markov_chain)-1)){
+    
+    if(markov_chain[i+1]==markov_chain[i]){
+      current_run_length=current_run_length+1
+    }else{
+      run_lengths=c(run_lengths,current_run_length)
+      current_run_length=1
+    }
+    
+  }
+  run_lengths=c(run_lengths,current_run_length)
+  
+  return(run_lengths)
+
+}
+
+
+```
+
+```{r}
+run_lengths=rle(state_vec)
+run_lengths
+```
+
+We plot a bar chart of the different run lengths in the data.
+
+```{r,out.width='80%',fig.align='center'}
+rle_lengths=run_lengths$lengths
+rle_values=run_lengths$values
+
+#Plot the bar chart
+b_plot=barplot(table(rle_lengths),col='red',yaxp=c(0,140,14),main='Bar plot of the different run values in our data') 
+
+#set the margins for the plot
+par(mar=c(1.5,1.5,1.5,1.5)+.1)
+
+#Set the labels for the bars
+text(x = b_plot, y =table(rle_lengths)-c(69,0,0,0,0,0,0,0), label = table(rle_lengths), pos = 3, cex = 0.8, col = "black")
+```
+We define a function that estimates the probability of getting each run length from the data.
+```{r}
+estimate_run_probs = function(rle_lengths){
+  max_length=max(rle_lengths) #highest run length
+  
+  #create empty vector for the probabilities
+  rle_prob_vec=vector(length=max_length) 
+  num_rle_lengths=length(rle_lengths) #number of run lengths in the data
+  for (i in 1:max_length){
+    #find the proportion of run lengths that are a specific value
+    rle_prob_vec[i]= sum(rle_lengths == i)/num_rle_lengths 
+  }
+  return(rle_prob_vec)
+}
+```
+
+Now we calculate the proportion of run lengths of each value, and let the values be our empirical discrete distribution.
+```{r}
+original_data_probs=estimate_run_probs(rle_lengths)
+data.frame(row.names=seq(1,max(rle_lengths)), val=original_data_probs)
+```
+We can now simulate many markov chains of the same length as our data and calculate the probabilities for a run length of each length. We will just look at run lengths of length 1,2,...,8 as these are the only ones contained in our data. We only take chains of length 272, because if we take more steps the probability of getting longer chains will increase. So keeping N=272 maintains a fair test.
+```{r}
+N=272
+n_sample=1000
+#matrix which will contain the estimates for each of our samples.
+
+rle_par_est=matrix(nrow=n_sample,ncol=8) 
+
+for( i in 1:n_sample){
+  rle_probs_to_add=c(0)*8 #create empty vector of 0's
+  chain=markov_steps(N,transition_matrix)#simulate chain
+  rle_chain=rle(chain)#get run length encoding of chain
+  rle_chain_lengths=rle(chain)$lengths #vector of run lengths
+  #get run probability estimates
+  rle_chain_probs=estimate_run_probs(rle_chain_lengths) 
+  rle_probs_length=length(rle_chain_probs)
+  
+  if (rle_probs_length<8){
+    #if the max run length in our chain is less than 8, we pad our 
+    #vector of probabilities with 0's so it contains 8 elements.
+    rle_chain_probs=c(rle_chain_probs,c(replicate(8-rle_probs_length,0)))
+  }else{
+    #if the max run length in our chain is more than (or equal to) 8, we just take
+    #the first eight values.
+    rle_chain_probs=head(rle_chain_probs,8)
+  }
+  rle_par_est[i,]=rle_chain_probs #add estimates to our matrix
+  
+}
+
+
+```
+
+
+We plot the mean amount of each run length from our simulations.
+
+```{r}
+#bar plot
+b_plot=barplot(colMeans(rle_par_est)*272,col='red',names.arg=c(1,2,3,4,5,6,7,8),yaxp=c(0,200,20),
+               main='Bar plot of the different run values in our simulated data') 
+
+#set the margins for the plot
+par(mar=c(1.5,1.5,1.5,1.5)+.1)
+
+#Set the labels for the bars
+text(x = b_plot, y =round(colMeans(rle_par_est)*272)-c(100,0,0,0,0,0,0,0), round(colMeans(rle_par_est)*272), pos = 3, cex = 0.8, col = "black")
+
+
+```
+Although the bar plots do have different numbers for the run lengths. e.g. (199 run lengths in our simulated data compared to 138 in the actual data). We inspect the distribution of the estimated probabilities.
+
+```{r}
+par(mfrow=c(2,4))
+
+
+for( i in 1:8){
+  #create boxplot
+  boxplot(rle_par_est[,i],main=paste('length',i,sep='='),ylab='Probability')  
+  
+  points(original_data_probs[i],col='red') #probability in actual data 
+  points(mean(rle_par_est[,i]),col='green') #mean probability in simulated chains
+  
+}
+```
+In the plots above, the red circles represent the mean probability of getting a specific run length from the simulations, and the green circles are the probabilities from the actual data. Below I will also print out the standard deviation of the probability of the run lengths, so we get a further idea of the spread of the data.
+
+```{r}
+sd_probs=vector(length=8)#empty vector for standard deviations
+for (i in 1:8){
+  sd_probs[i]=sd(rle_par_est[,i])
+}
+
+sd_probs
+```
+
+I will also plot the Q-Q norm plots for each of our run length estimates.
+```{r}
+par(mfrow=c(2,4))
+for( i in 1:8){
+  #plot qqnorms for each run length 
+  qqnorm(rle_par_est[,i],main=paste('length',i,sep='=')) 
+}
+
+```
+
+
+From the box plots, we can see that the mean of the simulated data and the actual data are quite close to each other, especially for the smaller run lengths where there are more data points (we can almost consider run lengths of 8 as outliers). Also, we can see that the standard deviations of the probabilities is quite small, implying that the probabilities are very close to their mean. So, I would suggest that the probabilities are converging to their empirical value.
+
+Furthermore, we can see from the qqplots that up until n=4, the qqnorm plots are very almost straight lines, implying the distributions for these run lengths is normal. For run lengths of 5 and above, it may also be the case that they are normal, but that we need to take more samples to get an accurate representation.
+
+One other quantity that we could perhaps compare is the difference between the number of 'ones' and 'zeroes' in the data compared to the simulated markov chains. Or, instead of looking at transitions from one state to the next, we could compare the relationship between time step i and time step i+2 in the data and the markov chains.
+
+\section{Conclusion}
+
+In conclusion, when we plot a histogram of the eruption duration, we can see that the lengths are either centered around 2 minutes or centered around 4.5 minutes. So, we assigned each eruption a label of 0 or 1. 0 corresponds to a short eruption (which we defined to be less than three minutes) and 1 corresponds to a long eruption (which we define to be greater than 3 minutes).
+
+The first model we used for the data was one where we assumed the states at each time step were independent. Assuming this model was true, we theoretically estimated the probability that we get a 1 and a 0 at each time step, and the probability of going from a 0->0, 0->1, 1->0, 1->1 (i.e. the probability of each **transition**). However, when we compared this model to the data (using the log likelihood ratio statistic), we actually found that it wasn't a good fit.
+
+The second model we tried was a two state time-homogeneous Markov model. This means that for each state we are in, we assign a probability to each of the transitions, and we assume that the each time step only depends on the previous time step, and not any earlier steps. We theoretically estimated each of the transition probabilities from the data. When comparing our markov model to the data, the transition probability estimates and run length distributions (i.e. the number of time steps the chain stays in a single state) seemed to be well matched. Thus, this second model seems to be a much better fit for the data. However, of course we cannot guarantee that it perfectly describes the inner mechanism of the geysers. For example, in our markov model we assumed that the state we are in only depends on our previous state, but this may not be true. In addition, we used a time-homogeneous model, which assumes that the probability of each transition is the same noo matter what time step we are at. But, this may not be true because conditions such as temperature etc. change over time, and these could affect the probabilities.
+
+
